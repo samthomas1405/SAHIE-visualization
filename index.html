@@ -1,0 +1,101 @@
+<!-- Updated HTML for SAHIE Visualization -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SAHIE Map Visualization</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+</head>
+<body>
+  <div id="sidebar">
+    <h1>SAHIE Map Visualization</h1>
+    <h2>Filter Data</h2>
+
+    <p id="selectPrompt" style="color: #555; font-style: italic; margin-bottom: 15px;">
+      Please select a geography level to begin.
+    </p>
+
+    <label for="levelCat">Geography Level:</label>
+    <select id="levelCat">
+      <option value="">-- Select Geography Level --</option>
+      <option value="county">County</option>
+      <option value="state">State</option>
+    </select><br><br>
+
+    <!-- This container is hidden until a geography level is selected -->
+    <div id="filterOptions" style="display: none;">
+
+      <label for="searchInput" id = "searchLabel">Search County or State:</label>
+      <input type="text" id="searchInput" placeholder="Start typing..." autocomplete="off" />
+      <div id="searchResults"></div>
+      <br><br>  
+
+      <div id="raceWrapper">
+        <label>Race Category:</label>
+        <select id="raceCat">
+          <option value="0">All Races</option>
+          <option value="1">White</option>
+          <option value="2">Black or African American</option>
+          <option value="3">Hispanic or Latino (any race)</option>
+          <option value="4">American Indian and Alaska Native</option>
+          <option value="5">Asian</option>
+          <option value="6">Native Hawaiian and other Pacific Islander</option>
+          <option value="7">Two or More Races</option>
+        </select><br><br>
+      </div>
+
+      <label for="ageCat">Age Category:</label>
+      <select id="ageCat">
+        <option value="0">Under 65 years</option>
+        <option value="1">18 to 64</option>
+        <option value="2">40 to 64</option>
+        <option value="3">50 to 64</option>
+        <option value="5">21 to 64 years</option>
+      </select><br><br>
+
+      <label for="sexCat">Sex Category:</label>
+      <select id="sexCat">
+        <option value="0">Both Sexes</option>
+        <option value="1">Male</option>
+        <option value="2">Female</option>
+      </select><br><br>
+
+      <label for="iprCat">Income Poverty Ratio:</label>
+      <select id="iprCat">
+        <option value="0">All Incomes</option>
+        <option value="1">0-138%</option>
+        <option value="2">0-200%</option>
+        <option value="3">0-250%</option>
+        <option value="4">0-400%</option>
+        <option value="5">138-400%</option>
+      </select><br><br>
+
+      <label for="yearSlider">Year: <span id="yearValue">2022</span></label><br>
+      <button id="playButton">▶ Play</button>
+      <input type="range" id="yearSlider" min="2006" max="2022" value="2022" step="1">
+      <p id="raceNote" style="display: none; font-size: 12px; color: #666; margin-top: 5px;">
+        Note: Some race categories (American Indian, Asian, NHPI, Two or More Races) only have data starting from 2021.
+      </p>
+
+    </div> <!-- End of filterOptions -->
+  </div>
+
+  <div id="map"></div>
+
+  <div id="gradient-key">
+    <div class="gradient-item"><div class="color-box" style="background-color: #e0f7ff;"></div> &lt; 50%</div>
+    <div class="gradient-item"><div class="color-box" style="background-color: #b3e5fc;"></div> 50 - 60%</div>
+    <div class="gradient-item"><div class="color-box" style="background-color: #81d4fa;"></div> 60 - 70%</div>
+    <div class="gradient-item"><div class="color-box" style="background-color: #1565c0;"></div> 70 - 80%</div>
+    <div class="gradient-item"><div class="color-box" style="background-color: #1e3d7b;"></div> 80 - 90%</div>
+    <div class="gradient-item"><div class="color-box" style="background-color: #002171;"></div> 90 - 95%</div>
+    <div class="gradient-item"><div class="color-box" style="background-color: #000033;"></div> &gt; 95%</div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
+
