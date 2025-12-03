@@ -135,8 +135,6 @@ SAHIE-visualization/
 │   ├── forecasting-models.js  # Forecasting algorithms
 │   ├── ui-controls.js      # UI control handlers
 │   └── dom-references.js   # DOM element references
-├── FORECASTING.md          # Detailed forecasting methodology documentation
-└── PROJECT_LOG.md          # Development log and progress tracking
 ```
 
 ## Forecasting Methodology
