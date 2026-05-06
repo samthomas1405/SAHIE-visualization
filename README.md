@@ -1,167 +1,109 @@
 # SAHIE Health Insurance Visualization & Forecasting
 
-An interactive web-based application built with Leaflet.js and the U.S. Census Bureau's SAHIE API to visualize health insurance coverage rates across U.S. counties and states, with advanced analytics and predictive forecasting capabilities.
+Interactive map and analytics for U.S. health insurance coverage (Census **SAHIE**) with chronic-health context (**CDC PLACES**), exploratory statistics, and browser-based forecasting. The UI is a **static site**—open `index.html` or serve the folder; all API calls run from the client.
 
 ## Features
 
-### 🗺️ Interactive Map Visualization
-- **Geographic Granularity**: Toggle between county-level and state-level views
-- **Year Selector**: Visualize data from 2006 to 2022 using an interactive slider
-- **Animated Time Playback**: Automatically cycle through each year to see trends over time
-- **Search Functionality**: Search for counties or states by name with autocomplete suggestions
-- **Dynamic Color Scaling**: Color-coded map with dynamic legends that scale based on data ranges
+### Map & layers
+- **County / state** toggle, year slider, **time playback**, and **sidebar search** with autocomplete.
+- **SAHIE** choropleth (% insured): blue scale, popups, demographic filters (age, sex, IPR, race where available).
+- **CDC PLACES** choropleth: one dropdown to switch chronic-health measures (e.g. obesity, diabetes, mental distress).
+- **Combined view**: blend insurance and a health measure with a **weight slider** (`getCombinedColor`).
+- **H3 hex grid** (Uber H3 via CDN): toggle from county polygons, **resolution slider**, aggregation for spatial views and neighbor-aware modeling.
 
-### 📊 Analytics Panel
-- **Comprehensive Statistics**: View count, mean, median, standard deviation, quartiles, and range
-- **Top/Bottom Rankings**: See the top 5 and bottom 5 locations for insurance coverage and health outcomes
-- **Correlation Analysis**: Analyze relationships between insurance coverage and health outcomes
-- **Regression Analysis**: View regression equations and correlation coefficients
-- **Dual View Modes**: Switch between single metric (insurance or health) and combined metric views
+### Analytics & scatterplot
+- **Distribution stats** (count, mean, median, SD, quartiles, range), **top/bottom** rankings, **dual-metric** summaries.
+- **Correlation and OLS** between coverage and the active PLACES measure.
+- **Scatterplot mode**: insurance % vs health % per place, synced with map selection and analytics.
 
-### 📈 Scatterplot Visualization
-- **Interactive Scatterplot**: Visualize insurance coverage (x-axis) vs. health outcomes (y-axis)
-- **Zoom & Pan**: Explore data with interactive zoom and pan controls
-- **Point Highlighting**: Hover and click on points to see detailed information
-- **Correlation Display**: View correlation coefficient and regression line
-- **Synchronized Views**: Scatterplot and map views stay synchronized
+### Predictive panel
+- **Enhanced ensemble**: many baseline methods (linear, Holt, ARIMA-style steps, quadratic, CAGR, etc.) plus adaptive **rolling cross-validation** weighting, **hierarchical** blending with parent geography, **gap-year** interpolation, and optional **`xgboostGlobal`** from an offline-trained boosted tree (see scripts below).
+- **Uncertainty bands** on the main forecast chart for the ensemble path.
+- **Rolling backtests** (1 / 3 / 5 year horizons): **ensemble vs Bayesian AR(1)+trend MCMC** side-by-side (metrics, scatters); MCMC is a comparison model in validation, not drawn on the primary forecast chart.
 
-### 🔮 Predictive Forecasting
-- **Time Series Forecasting**: Predict future insurance coverage rates using multiple forecasting methods
-- **5 Forecasting Methods**:
-  - **5-Year Linear Regression**: Focuses on recent trends from the last 5 years
-  - **Holt's Linear Exponential Smoothing**: Tracks level and trend components separately
-  - **ARIMA(1,1,1)**: Captures complex temporal dependencies with differencing
-  - **Quadratic Regression**: Models curved trends and acceleration/deceleration
-  - **CAGR**: Assumes constant percentage growth over time
-- **Ensemble Forecasting**: Weighted combination of all methods for robust predictions
-- **Confidence Intervals**: View upper and lower bounds for forecast uncertainty
-- **Gap Year Filling**: Automatically fills in missing years (2023-2025) between historical data and forecasts
-- **Trend Analysis**: Detailed trend direction, strength, and historical change analysis
+### Documentation
+- **Methodology & implementation details:** [`docs/PREDICTION_MODEL.md`](docs/PREDICTION_MODEL.md)
+- **Talk outline (slides):** [`docs/PRESENTATION.md`](docs/PRESENTATION.md) *(optional)*
 
-### 🏥 Health Outcome Integration
-- **CDC PLACES Data**: Integrates chronic health measures from CDC PLACES dataset
-- **Multiple Health Measures**: 
-  - Diabetes, Obesity, High Blood Pressure
-  - Heart Disease, Stroke, Cancer
-  - Asthma, COPD, Depression
-  - Kidney Disease, Arthritis
-  - Preventive Care Measures
-- **Combined View**: Visualize both insurance coverage and health outcomes simultaneously using color blending
-- **Relationship Analysis**: Explore correlations between insurance coverage and health outcomes
+## Tech stack
 
-### 🎛️ Demographic Filters
-- **Age Categories**: Filter by age groups (0-64, 18-64, etc.)
-- **Sex**: Filter by male, female, or both sexes
-- **Income Poverty Ratio (IPR)**: Filter by income levels
-- **Race**: Filter by race categories (available for state-level data)
+- HTML5, CSS3, JavaScript (ES5-style globals / script tags)
+- [Leaflet](https://leafletjs.com/), [h3-js](https://github.com/uber/h3-js) (UMD)
+- [SAHIE API](https://www.census.gov/data/developers/data-sets/health-insurance.html), [PLACES](https://www.cdc.gov/places/)
+- OpenStreetMap tiles
 
-## Tech Stack
+## Getting started
 
-- **Frontend**: HTML5, CSS3, JavaScript (ES6+)
-- **Mapping Library**: [Leaflet.js](https://leafletjs.com/)
-- **Data Sources**:
-  - [U.S. Census Bureau SAHIE API](https://www.census.gov/data/developers/data-sets/health-insurance.html) - Health insurance coverage estimates
-  - [CDC PLACES API](https://www.cdc.gov/places/) - Chronic health outcome data
-- **Map Tiles**: OpenStreetMap
-
-## Getting Started
-
-### Prerequisites
-- A modern web browser (Chrome, Firefox, Safari, Edge)
-- Internet connection (for API calls and map tiles)
-
-### Installation
-
-1. **Clone the repository**:
+### Run the app
+1. Clone the repo:
    ```bash
    git clone https://github.com/samthomas1405/SAHIE-visualization.git
    cd SAHIE-visualization
    ```
+2. Open **`index.html`** in a modern browser, or use a local server (recommended for some environments):
+   ```bash
+   python3 -m http.server 8000
+   # http://localhost:8000
+   ```
 
-2. **Open the application**:
-   - Simply open `index.html` in your web browser
-   - Or use a local web server:
-     ```bash
-     # Using Python 3
-     python -m http.server 8000
-     
-     # Using Node.js (if you have http-server installed)
-     npx http-server
-     ```
-   - Then navigate to `http://localhost:8000` in your browser
+You need network access for Census / CDC APIs and map tiles.
 
-### Usage
+### Usage sketch
+- Pick **layer** (insurance / health / combined), **year**, and **demographics**; use **search** or click the map.
+- Open **analytics** for stats and correlation; switch to **scatterplot** for the joint view.
+- Use **Predictive modeling** (FAB): choose place, horizon, run **Generate forecast**; expand backtest section for ensemble vs MCMC comparison.
 
-1. **View Insurance Coverage**:
-   - Select a year using the slider
-   - Toggle between county and state views
-   - Use the search bar to find specific locations
-   - Click on map regions to see detailed information
+## Optional: Node tooling
 
-2. **Explore Health Outcomes**:
-   - Switch to "Health" layer in the layer selector
-   - Select a health measure from the dropdown
-   - View statistics in the analytics panel
+Not required to use the site. For retraining the pooled GBDT or re-running county batch evaluation:
 
-3. **Analyze Relationships**:
-   - Switch to "Combined" view
-   - Adjust the relationship weight slider to balance insurance and health visualization
-   - View correlation analysis in the analytics panel
-   - Switch to scatterplot view for visual correlation analysis
+```bash
+npm install
+npm run train-xgboost    # writes bundled model artifacts used by the app
+node scripts/run-county-batch.mjs   # batch backtests (see script for options / output)
+```
 
-4. **Generate Forecasts**:
-   - Click the "Predictive Modeling" button
-   - Search for a location (state or county)
-   - Select demographics (optional)
-   - Choose years to forecast (1-10 years)
-   - Click "Generate Forecast" to see predictions
-   - View detailed explanations and confidence intervals
+Dependencies are listed in [`package.json`](package.json).
 
-## Project Structure
+## Project structure (high level)
 
 ```
 SAHIE-visualization/
-├── index.html              # Main HTML file
-├── styles.css              # All styling
-├── script.js               # Legacy script (backup)
+├── index.html
+├── styles.css
+├── package.json
+├── docs/
+│   ├── PREDICTION_MODEL.md    # forecasting & validation write-up
+│   └── PRESENTATION.md       # slide outline
+├── scripts/
+│   ├── train-xgboost-model.mjs  # XGBoost training pipeline (`npm run train-xgboost`)
+│   └── run-county-batch.mjs
 ├── js/
-│   ├── app.js              # Main application entry point
-│   ├── config.js           # Configuration and constants
-│   ├── data-manager.js     # Data fetching and management
-│   ├── map-manager.js      # Map rendering and interactions
-│   ├── analytics-manager.js # Analytics panel logic
-│   ├── scatterplot-manager.js # Scatterplot visualization
-│   ├── predictive-manager.js  # Forecasting UI management
-│   ├── forecasting-models.js  # Forecasting algorithms
-│   ├── ui-controls.js      # UI control handlers
-│   └── dom-references.js   # DOM element references
-├── FORECASTING.md          # Detailed forecasting methodology documentation
-└── PROJECT_LOG.md          # Development log and progress tracking
+│   ├── app.js
+│   ├── config.js
+│   ├── dom-references.js
+│   ├── data-manager.js        # SAHIE + PLACES + GeoJSON plumbing
+│   ├── map-manager.js        # Leaflet, choropleth, H3, combined colors
+│   ├── h3-spatial-indexing.js
+│   ├── scatterplot-manager.js
+│   ├── analytics-manager.js
+│   ├── predictive-manager.js # forecast UI, chart, backtest panel
+│   ├── predictive-models.js
+│   ├── forecasting-models.js
+│   ├── enhanced-forecasting-models.js
+│   ├── mcmc-forecasting.js
+│   ├── batch-forecast-eval.js
+│   ├── xgboost-features.js
+│   ├── xgboost-model-data.js
+│   ├── xgboost-scorer.js
+│   ├── ui-controls.js
+│   └── README.md              # module notes
+├── script.js                  # legacy / backup (not primary entry)
+└── county-batch-results.json  # example batch output (if present)
 ```
 
-## Forecasting Methodology
+*(Exact file list may grow; script load order is defined in `index.html`.)*
 
-The forecasting system uses an ensemble approach combining 5 different methods:
+## Disclaimer
 
-1. **5-Year Linear Regression**: Uses only recent data (last 5 years) to capture current trends
-2. **Holt's Linear**: Double exponential smoothing that tracks level and trend separately
-3. **ARIMA(1,1,1)**: Autoregressive Integrated Moving Average with first-order differencing
-4. **Quadratic Regression**: Polynomial regression that captures acceleration/deceleration
-5. **CAGR**: Compound Annual Growth Rate assuming constant percentage growth
-
-The ensemble method intelligently weights each method based on:
-- Historical fit quality (R²)
-- Alignment with recent trends
-- Method stability and reliability
-
-For detailed information, see [FORECASTING.md](FORECASTING.md).
-
-## Data Sources
-
-- **SAHIE (Small Area Health Insurance Estimates)**: Provides health insurance coverage estimates for states and counties from 2006-2022
-- **CDC PLACES**: Provides model-based estimates of chronic disease prevalence and preventive health behaviors
-
----
-
-**Note**: This application is for visualization and analysis purposes. Forecasts are predictions based on historical data and should not be used as definitive future values.
-
+This project is for **education and exploration**. Maps and forecasts summarize public estimates and models—**not** official policy or medical guidance. Do not treat forecast intervals as guaranteed coverage of future outcomes.
