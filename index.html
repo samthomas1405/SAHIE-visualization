@@ -64,6 +64,28 @@
     <!-- Hidden until a geography level is selected -->
     <div id="filterOptions" style="display:none;">
 
+      <!-- Boundaries: Regular or H3 hexagons (first so it's visible without scrolling) -->
+      <div id="spatialViewWrapper" style="margin-bottom:16px;">
+        <label style="margin-bottom:8px; display:block; font-weight:600; color:#2d3748;">Boundaries:</label>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button id="regularBoundariesBtn" type="button" class="boundary-btn active" data-view="regular">▭ Regular</button>
+          <button id="h3HexagonsBtn" type="button" class="boundary-btn" data-view="h3">⬡ Hexagonal (H3)</button>
+        </div>
+        <div id="h3SizeWrapper" style="display:none; margin-top:8px;">
+          <label style="margin-bottom:4px; display:block; font-size:12px; color:#64748b;">H3 mode:</label>
+          <div style="display:flex; gap:6px; margin-bottom:8px;">
+            <button id="h3CentroidBtn" type="button" class="boundary-btn boundary-btn-sm active" data-mode="centroid">Centroid (1 per area)</button>
+            <button id="h3GridBtn" type="button" class="boundary-btn boundary-btn-sm" data-mode="grid">Full grid</button>
+          </div>
+          <label style="margin-bottom:4px; display:block; font-size:12px; color:#64748b;">Resolution: <span id="h3SizeValue">Res 4</span></label>
+          <input type="range" id="h3SizeSlider" min="0" max="100" value="50" step="1" style="width:100%; accent-color:#3b82f6;"/>
+          <div style="display:flex; justify-content:space-between; font-size:10px; color:#94a3b8; margin-top:2px;">
+            <span>Small</span>
+            <span>Large</span>
+          </div>
+        </div>
+      </div>
+
       <!-- View mode toggle (only shown for combined view) -->
       <div id="viewModeToggle" style="display:none; margin-bottom:16px;">
         <label style="margin-bottom:8px; display:block; font-weight:600; color:#2d3748;">View Mode:</label>
@@ -464,6 +486,7 @@
       <button id="forecastTrendBtn" class="pp-predict-btn">📈 Generate Forecast</button>
       <div id="trendForecastResult" class="pp-result"></div>
       <div id="trendForecastChart" class="pp-chart-container"></div>
+      <div id="trendForecastBacktest" class="pp-backtest-container"></div>
     </div>
   </div>
 
@@ -475,7 +498,8 @@
 
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  
+  <script src="https://unpkg.com/h3-js@4.1.0/dist/h3-js.umd.js"></script>
+
   <!-- Modular JavaScript files -->
   <script src="js/config.js"></script>
   <script src="js/dom-references.js"></script>
@@ -484,7 +508,15 @@
   <script src="js/scatterplot-manager.js"></script>
   <script src="js/analytics-manager.js"></script>
   <script src="js/predictive-models.js"></script>
+  <script src="js/xgboost-features.js"></script>
+  <script src="js/xgboost-model-data.js"></script>
+  <script src="js/xgboost-scorer.js"></script>
   <script src="js/forecasting-models.js"></script>
+  <script src="js/mcmc-forecasting.js"></script>
+  <!-- Enhanced Forecasting Models with Spatiotemporal and Multivariate Features -->
+  <script src="js/enhanced-forecasting-models.js"></script>
+  <script src="js/batch-forecast-eval.js"></script>
+  <script src="js/h3-spatial-indexing.js"></script>
   <script src="js/predictive-manager.js"></script>
   <script src="js/ui-controls.js"></script>
   <script src="js/app.js"></script>

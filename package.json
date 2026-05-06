@@ -1,0 +1,12 @@
+{
+  "name": "vip-sahie",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "train-xgboost": "node scripts/train-xgboost-model.mjs"
+  },
+  "dependencies": {
+    "ml-cart": "^2.1.1",
+    "ml-matrix": "^6.0.0"
+  }
+}

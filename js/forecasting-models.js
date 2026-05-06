@@ -4,6 +4,76 @@
 
 const ForecastingModels = {
 
+  // Cache for fetchAllHistoricalData: key = demographics hash, value = { [fips]: [{year,value}] }
+  _allHistoricalCache: null,
+  _allHistoricalCacheKey: null,
+
+  /**
+   * Anchor year for forecasts: last historical year by default, or max(lastHist, wall clock).
+   * Pass anchorYearOverride for backtests (e.g. last training year).
+   */
+  resolveAnchorYear(historicalData, anchorYearOverride) {
+    const sorted = [...historicalData].sort((a, b) => a.year - b.year);
+    const lastHistoricalYear = sorted[sorted.length - 1].year;
+    const anchorYear = anchorYearOverride != null
+      ? anchorYearOverride
+      : Math.max(lastHistoricalYear, new Date().getFullYear());
+    const yearsGap = anchorYear - lastHistoricalYear;
+    return { sorted, lastHistoricalYear, anchorYear, yearsGap };
+  },
+
+  /** Sigmoid soft clamp into (0, 100) for ensemble saturation */
+  softPct(x, steepness = 0.12, midpoint = 50) {
+    return Math.max(0, Math.min(100, 100 / (1 + Math.exp(-steepness * (x - midpoint)))));
+  },
+
+  _holtFitState(values, alpha, beta) {
+    let level = values[0];
+    let trend = values.length > 1 ? values[1] - values[0] : 0;
+    for (let i = 1; i < values.length; i++) {
+      const prevL = level;
+      const prevT = trend;
+      level = alpha * values[i] + (1 - alpha) * (prevL + prevT);
+      trend = beta * (level - prevL) + (1 - beta) * prevT;
+    }
+    return { level, trend };
+  },
+
+  /** One-step-ahead forecast at end of series (next point) */
+  _holtOneStepAhead(trainData, alpha, beta) {
+    if (!trainData || trainData.length < 2) return null;
+    const vals = [...trainData].sort((a, b) => a.year - b.year).map(d => d.value);
+    const { level, trend } = this._holtFitState(vals, alpha, beta);
+    return level + trend;
+  },
+
+  /** Grid search Holt (alpha, beta) by one-step-ahead MSE on expanding windows */
+  selectHoltsParams(historicalData) {
+    const sorted = [...historicalData].sort((a, b) => a.year - b.year);
+    const alphas = [0.1, 0.3, 0.5, 0.7, 0.9];
+    const betas = [0.01, 0.05, 0.1, 0.2];
+    let best = { alpha: 0.3, beta: 0.1, mse: Infinity };
+    if (sorted.length < 4) return { alpha: 0.3, beta: 0.1 };
+    for (const alpha of alphas) {
+      for (const beta of betas) {
+        let sse = 0;
+        let count = 0;
+        for (let t = 2; t < sorted.length; t++) {
+          const train = sorted.slice(0, t);
+          const actual = sorted[t].value;
+          const pred = this._holtOneStepAhead(train, alpha, beta);
+          if (pred == null) continue;
+          const e = pred - actual;
+          sse += e * e;
+          count++;
+        }
+        const mse = count > 0 ? sse / count : Infinity;
+        if (mse < best.mse) best = { alpha, beta, mse };
+      }
+    }
+    return { alpha: best.alpha, beta: best.beta };
+  },
+
   // Fetch historical time series data for insurance coverage
   async fetchHistoricalInsuranceData(fips, demographics = {}) {
     try {
@@ -51,8 +121,69 @@ const ForecastingModels = {
     }
   },
 
+  /**
+   * Fetch historical data for ALL locations (states or counties) for spatial/hierarchical forecasting.
+   * Results cached by demographics + mapLevel to avoid repeated API calls.
+   * @param {Object} demographics - ageCat, sexCat, raceCat, iprCat
+   * @param {string} mapLevel - 'state' or 'county'
+   * @returns {Object} { [fips]: [{ year, value }, ...] }
+   */
+  async fetchAllHistoricalData(demographics = {}, mapLevel = 'county') {
+    const ageCat = demographics.ageCat || 0;
+    const sexCat = demographics.sexCat || 0;
+    const iprCat = demographics.iprCat || 0;
+    const raceCat = demographics.raceCat || 0;
+    const cacheKey = `${mapLevel}:${ageCat}:${sexCat}:${iprCat}:${raceCat}`;
+
+    if (this._allHistoricalCache && this._allHistoricalCacheKey === cacheKey) {
+      return this._allHistoricalCache;
+    }
+
+    try {
+      const isState = mapLevel === 'state';
+      const geoClause = isState ? 'for=state:*' : 'for=county:*&in=state:*';
+      const raceParam = isState && raceCat !== '0' ? `&RACECAT=${raceCat}` : '';
+      const getParams = isState
+        ? 'get=NAME,PCTIC_PT,STATE'
+        : 'get=NAME,PCTIC_PT,STATE,COUNTY';
+
+      const allData = {};
+
+      for (let year = 2006; year <= 2022; year++) {
+        const url = `https://api.census.gov/data/timeseries/healthins/sahie?${getParams}&${geoClause}&AGECAT=${ageCat}&SEXCAT=${sexCat}&IPRCAT=${iprCat}${raceParam}&time=${year}`;
+        try {
+          const response = await fetch(url);
+          const data = await response.json();
+          const rows = data.slice(1);
+          for (const row of rows) {
+            const stateFIPS = row[2];
+            const key = isState ? stateFIPS : `${stateFIPS}${row[3]}`.padStart(5, '0');
+            const value = parseFloat(row[1]);
+            if (!isNaN(value)) {
+              if (!allData[key]) allData[key] = [];
+              allData[key].push({ year, value });
+            }
+          }
+        } catch (error) {
+          console.warn(`Error fetching data for year ${year}:`, error);
+        }
+      }
+
+      for (const fips of Object.keys(allData)) {
+        allData[fips].sort((a, b) => a.year - b.year);
+      }
+
+      this._allHistoricalCache = allData;
+      this._allHistoricalCacheKey = cacheKey;
+      return allData;
+    } catch (error) {
+      console.error('Error fetching all historical data:', error);
+      return {};
+    }
+  },
+
   // 5-year linear regression (uses only last 5 years of data)
-  forecast5YearLinear(historicalData, yearsAhead = 5) {
+  forecast5YearLinear(historicalData, yearsAhead = 5, anchorYearOverride = null) {
     if (historicalData.length < 3) {
       return { forecast: [], trend: null, rSquared: 0, slope: 0 };
     }
@@ -93,12 +224,10 @@ const ForecastingModels = {
     }
     const rSquared = ssTot !== 0 ? 1 - (ssRes / ssTot) : 0;
     
-    // Generate forecast for future years (starting from 2025 as current year)
-    const lastHistoricalYear = Math.max(...years);
-    const currentYear = 2025;
+    const { anchorYear } = this.resolveAnchorYear(sorted, anchorYearOverride);
     const forecast = [];
     for (let i = 1; i <= yearsAhead; i++) {
-      const futureYear = currentYear + i;
+      const futureYear = anchorYear + i;
       const predicted = intercept + slope * futureYear;
       
       // Calculate confidence interval (95% CI using standard error)
@@ -124,8 +253,8 @@ const ForecastingModels = {
     };
   },
 
-  // Holt's Linear (Double Exponential Smoothing with Trend)
-  forecastHoltsLinear(historicalData, yearsAhead = 5, alpha = 0.3, beta = 0.1) {
+  // Holt's Linear (Double Exponential Smoothing with Trend); optional grid-selected (alpha, beta)
+  forecastHoltsLinear(historicalData, yearsAhead = 5, alpha = null, beta = null, anchorYearOverride = null) {
     if (historicalData.length < 3) {
       return { forecast: [], level: null, trend: null };
     }
@@ -133,45 +262,41 @@ const ForecastingModels = {
     const sorted = [...historicalData].sort((a, b) => a.year - b.year);
     const values = sorted.map(d => d.value);
     const years = sorted.map(d => d.year);
+
+    let a = alpha;
+    let b = beta;
+    if (a == null || b == null) {
+      const sel = this.selectHoltsParams(sorted);
+      a = a == null ? sel.alpha : a;
+      b = b == null ? sel.beta : b;
+    }
     
-    // Initialize level and trend
     let level = values[0];
     let trend = values.length > 1 ? values[1] - values[0] : 0;
-    
-    // Holt's double exponential smoothing
     const levels = [level];
     const trends = [trend];
     
     for (let i = 1; i < values.length; i++) {
       const prevLevel = level;
       const prevTrend = trend;
-      
-      // Update level: alpha * current_value + (1 - alpha) * (prev_level + prev_trend)
-      level = alpha * values[i] + (1 - alpha) * (prevLevel + prevTrend);
-      
-      // Update trend: beta * (level - prev_level) + (1 - beta) * prev_trend
-      trend = beta * (level - prevLevel) + (1 - beta) * prevTrend;
-      
+      level = a * values[i] + (1 - a) * (prevLevel + prevTrend);
+      trend = b * (level - prevLevel) + (1 - b) * prevTrend;
       levels.push(level);
       trends.push(trend);
     }
     
-    // Generate forecast (starting from 2025 as current year)
-    const lastHistoricalYear = Math.max(...years);
-    const currentYear = 2025;
-    const yearsGap = currentYear - lastHistoricalYear;
+    const { anchorYear: anchor, yearsGap } = this.resolveAnchorYear(sorted, anchorYearOverride);
     const forecast = [];
     
-    // Project forward: forecast[h] = level + h * trend
     for (let i = 1; i <= yearsAhead; i++) {
-      const futureYear = currentYear + i;
-      const h = yearsGap + i; // Steps ahead from last historical data
+      const futureYear = anchor + i;
+      const h = yearsGap + i;
       const predicted = level + h * trend;
       
       forecast.push({
         year: futureYear,
         predicted: Math.max(0, Math.min(100, predicted)),
-        confidence: 0.75 // Moderate confidence for Holt's method
+        confidence: 0.75
       });
     }
     
@@ -179,7 +304,43 @@ const ForecastingModels = {
       forecast, 
       level: level,
       trend: trend,
-      rSquared: this.calculateRSquared(values, levels.slice(0, values.length))
+      rSquared: this.calculateRSquared(values, levels.slice(0, values.length)),
+      holtsAlpha: a,
+      holtsBeta: b
+    };
+  },
+
+  /** Holt's damped trend: long horizons pull trend toward zero via phi in (0,1) */
+  forecastDampedHolts(historicalData, yearsAhead = 5, phi = 0.9, anchorYearOverride = null) {
+    if (historicalData.length < 3) {
+      return { forecast: [], level: null, trend: null };
+    }
+    const sel = this.selectHoltsParams(historicalData);
+    const sorted = [...historicalData].sort((a, b) => a.year - b.year);
+    const values = sorted.map(d => d.value);
+    const { level, trend } = this._holtFitState(values, sel.alpha, sel.beta);
+    const { anchorYear: anchor, yearsGap } = this.resolveAnchorYear(sorted, anchorYearOverride);
+    const forecast = [];
+    for (let i = 1; i <= yearsAhead; i++) {
+      const futureYear = anchor + i;
+      const h = yearsGap + i;
+      let sumPhi = 0;
+      for (let j = 1; j <= h; j++) sumPhi += Math.pow(phi, j);
+      const predicted = level + sumPhi * trend;
+      forecast.push({
+        year: futureYear,
+        predicted: Math.max(0, Math.min(100, predicted)),
+        confidence: 0.72,
+        method: 'damped_holts'
+      });
+    }
+    const holtRef = this.forecastHoltsLinear(historicalData, 1, sel.alpha, sel.beta, anchorYearOverride);
+    return {
+      forecast,
+      level,
+      trend,
+      phi,
+      rSquared: holtRef.rSquared != null ? holtRef.rSquared : 0
     };
   },
   
@@ -196,9 +357,8 @@ const ForecastingModels = {
     return ssTot !== 0 ? 1 - (ssRes / ssTot) : 0;
   },
 
-  // ARIMA(1,1,1) - AutoRegressive Integrated Moving Average
-  // ARIMA(p,d,q) where p=1 (AR), d=1 (differencing), q=1 (MA)
-  forecastARIMA111(historicalData, yearsAhead = 5) {
+  // ARIMA(1,1,1) - AutoRegressive Integrated Moving Average (simplified)
+  forecastARIMA111(historicalData, yearsAhead = 5, anchorYearOverride = null) {
     if (historicalData.length < 4) {
       return { forecast: [], arCoeff: 0, maCoeff: 0, rSquared: 0 };
     }
@@ -207,7 +367,6 @@ const ForecastingModels = {
     const values = sorted.map(d => d.value);
     const n = values.length;
     
-    // Step 1: First-order differencing (d=1)
     const diffValues = [];
     for (let i = 1; i < n; i++) {
       diffValues.push(values[i] - values[i - 1]);
@@ -217,11 +376,6 @@ const ForecastingModels = {
       return { forecast: [], arCoeff: 0, maCoeff: 0, rSquared: 0 };
     }
     
-    // Step 2: Estimate AR(1) and MA(1) coefficients using simplified approach
-    // For ARIMA(1,1,1), we model: (1 - φB)(1 - B)Y_t = (1 + θB)ε_t
-    // Simplified: estimate AR(1) on differenced data, then estimate MA(1) on residuals
-    
-    // Estimate AR(1) coefficient on differenced data
     let arSum = 0;
     let arDenom = 0;
     for (let i = 1; i < diffValues.length; i++) {
@@ -230,14 +384,12 @@ const ForecastingModels = {
     }
     const arCoeff = arDenom !== 0 ? Math.max(-0.9, Math.min(0.9, arSum / arDenom)) : 0;
     
-    // Calculate residuals for MA estimation
     const residuals = [diffValues[0]];
     for (let i = 1; i < diffValues.length; i++) {
       const predicted = arCoeff * diffValues[i - 1];
       residuals.push(diffValues[i] - predicted);
     }
     
-    // Estimate MA(1) coefficient
     let maSum = 0;
     let maDenom = 0;
     for (let i = 1; i < residuals.length; i++) {
@@ -245,36 +397,37 @@ const ForecastingModels = {
       maDenom += residuals[i - 1] * residuals[i - 1];
     }
     const maCoeff = maDenom !== 0 ? Math.max(-0.9, Math.min(0.9, maSum / maDenom)) : 0;
-    
-    // Step 3: Generate forecast
-    const lastHistoricalYear = Math.max(...sorted.map(d => d.year));
-    const currentYear = 2025;
-    const yearsGap = currentYear - lastHistoricalYear;
+
+    let ssResD = 0;
+    let ssTotD = 0;
+    const meanD = diffValues.reduce((s, v) => s + v, 0) / diffValues.length;
+    for (let i = 1; i < diffValues.length; i++) {
+      const predDiff = arCoeff * diffValues[i - 1] + maCoeff * residuals[i - 1];
+      ssResD += Math.pow(diffValues[i] - predDiff, 2);
+      ssTotD += Math.pow(diffValues[i] - meanD, 2);
+    }
+    const rSquared = ssTotD > 0 ? Math.max(0, Math.min(1, 1 - ssResD / ssTotD)) : 0;
+
+    const { anchorYear: anchor } = this.resolveAnchorYear(sorted, anchorYearOverride);
     const forecast = [];
     
-    // Start with last differenced value and last residual
     let lastDiff = diffValues[diffValues.length - 1];
     let lastResidual = residuals[residuals.length - 1];
     let lastValue = values[values.length - 1];
     
     for (let i = 1; i <= yearsAhead; i++) {
-      const futureYear = currentYear + i;
-      
-      // Forecast differenced value: AR(1) * last_diff + MA(1) * last_residual
+      const futureYear = anchor + i;
       const forecastDiff = arCoeff * lastDiff + maCoeff * lastResidual;
-      
-      // Integrate back: add to last value
       const predicted = lastValue + forecastDiff;
-      
-      // Update for next iteration
+      const prevDiff = lastDiff;
       lastDiff = forecastDiff;
-      lastResidual = forecastDiff - (arCoeff * lastDiff); // Simplified residual
+      lastResidual = forecastDiff - arCoeff * prevDiff;
       lastValue = predicted;
       
       forecast.push({
         year: futureYear,
         predicted: Math.max(0, Math.min(100, predicted)),
-        confidence: 0.72 // Moderate confidence for ARIMA
+        confidence: 0.72
       });
     }
     
@@ -282,12 +435,12 @@ const ForecastingModels = {
       forecast, 
       arCoeff: arCoeff,
       maCoeff: maCoeff,
-      rSquared: 0.7 // Approximate R² for ARIMA
+      rSquared: Math.max(0, Math.min(1, rSquared))
     };
   },
 
   // Compound annual growth rate (CAGR) forecast
-  forecastCAGR(historicalData, yearsAhead = 5) {
+  forecastCAGR(historicalData, yearsAhead = 5, anchorYearOverride = null) {
     if (historicalData.length < 2) {
       return { forecast: [], cagr: 0 };
     }
@@ -303,15 +456,11 @@ const ForecastingModels = {
       return { forecast: [], cagr: 0 };
     }
     
-    // CAGR formula: (Ending Value / Beginning Value)^(1/periods) - 1
     const cagr = Math.pow(lastValue / firstValue, 1 / periods) - 1;
-    
-    // Generate forecast (starting from 2025 as current year)
-    const currentYear = 2025;
-    const yearsGap = currentYear - lastYear;
+    const { anchorYear, yearsGap } = this.resolveAnchorYear(sorted, anchorYearOverride);
     const forecast = [];
     for (let i = 1; i <= yearsAhead; i++) {
-      const futureYear = currentYear + i;
+      const futureYear = anchorYear + i;
       const predicted = lastValue * Math.pow(1 + cagr, yearsGap + i);
       forecast.push({
         year: futureYear,
@@ -324,14 +473,15 @@ const ForecastingModels = {
   },
 
   // Polynomial regression (2nd and 3rd degree) - captures non-linear trends
-  forecastPolynomial(historicalData, yearsAhead = 5, degree = 2) {
+  forecastPolynomial(historicalData, yearsAhead = 5, degree = 2, anchorYearOverride = null) {
     if (historicalData.length < degree + 2) {
       return { forecast: [], rSquared: 0, coefficients: [] };
     }
 
-    const n = historicalData.length;
-    const years = historicalData.map(d => d.year);
-    const values = historicalData.map(d => d.value);
+    const sortedPoly = [...historicalData].sort((a, b) => a.year - b.year);
+    const n = sortedPoly.length;
+    const years = sortedPoly.map(d => d.year);
+    const values = sortedPoly.map(d => d.value);
     
     // Center years for numerical stability
     const meanYear = years.reduce((s, y) => s + y, 0) / n;
@@ -364,12 +514,10 @@ const ForecastingModels = {
     }
     const rSquared = ssTot !== 0 ? 1 - (ssRes / ssTot) : 0;
     
-    // Generate forecast (starting from 2025 as current year)
-    const lastHistoricalYear = Math.max(...years);
-    const currentYear = 2025;
+    const { anchorYear } = this.resolveAnchorYear(sortedPoly, anchorYearOverride);
     const forecast = [];
     for (let i = 1; i <= yearsAhead; i++) {
-      const futureYear = currentYear + i;
+      const futureYear = anchorYear + i;
       const centeredFutureYear = futureYear - meanYear;
       let predicted = coefficients[0];
       for (let d = 1; d <= degree; d++) {
@@ -458,14 +606,15 @@ const ForecastingModels = {
   },
 
   // Weighted linear regression (gives more weight to recent data)
-  forecastWeightedLinear(historicalData, yearsAhead = 5) {
+  forecastWeightedLinear(historicalData, yearsAhead = 5, anchorYearOverride = null) {
     if (historicalData.length < 3) {
       return { forecast: [], rSquared: 0, slope: 0 };
     }
 
-    const n = historicalData.length;
-    const years = historicalData.map(d => d.year);
-    const values = historicalData.map(d => d.value);
+    const sortedW = [...historicalData].sort((a, b) => a.year - b.year);
+    const n = sortedW.length;
+    const years = sortedW.map(d => d.year);
+    const values = sortedW.map(d => d.value);
     
     // More aggressive exponential weights: recent data gets MUCH more weight
     // Use stronger decay factor (0.5 instead of 0.3) to emphasize recent trends
@@ -509,12 +658,10 @@ const ForecastingModels = {
     }
     const rSquared = ssTot !== 0 ? 1 - (ssRes / ssTot) : 0;
     
-    // Generate forecast (starting from 2025 as current year)
-    const lastHistoricalYear = Math.max(...years);
-    const currentYear = 2025;
+    const { anchorYear } = this.resolveAnchorYear(sortedW, anchorYearOverride);
     const forecast = [];
     for (let i = 1; i <= yearsAhead; i++) {
-      const futureYear = currentYear + i;
+      const futureYear = anchorYear + i;
       const predicted = intercept + slope * futureYear;
       forecast.push({
         year: futureYear,
@@ -526,20 +673,49 @@ const ForecastingModels = {
     return { forecast, rSquared, slope, intercept };
   },
 
-  // Autoregressive (AR) model - uses previous values to predict future
-  forecastAR(historicalData, yearsAhead = 5, order = 2) {
-    if (historicalData.length < order + 2) {
-      return { forecast: [], coefficients: [] };
+  /** BIC for AR order selection on a value series */
+  selectAROrder(values, maxOrder = 4) {
+    const n = values.length;
+    let best = { order: 1, bic: Infinity };
+    for (let order = 1; order <= Math.min(maxOrder, n - 3); order++) {
+      const X = [];
+      const y = [];
+      for (let i = order; i < n; i++) {
+        const row = [1];
+        for (let j = 1; j <= order; j++) row.push(values[i - j]);
+        X.push(row);
+        y.push(values[i]);
+      }
+      const m = y.length;
+      if (m < order + 2) continue;
+      const coeffs = this.leastSquares(X, y);
+      let sse = 0;
+      for (let r = 0; r < m; r++) {
+        let pred = coeffs[0];
+        for (let j = 0; j < order; j++) pred += coeffs[j + 1] * X[r][j + 1];
+        sse += Math.pow(y[r] - pred, 2);
+      }
+      const k = order + 1;
+      const bic = m * Math.log(sse / m + 1e-10) + k * Math.log(m);
+      if (bic < best.bic) best = { order, bic };
     }
+    return best.bic === Infinity ? 1 : best.order;
+  },
 
-    const values = historicalData.map(d => d.value);
+  // Autoregressive (AR) model - BIC order selection (1..4)
+  forecastAR(historicalData, yearsAhead = 5, anchorYearOverride = null) {
+    const sortedAR = [...historicalData].sort((a, b) => a.year - b.year);
+    const values = sortedAR.map(d => d.value);
+    const order = this.selectAROrder(values, 4);
+    if (sortedAR.length < order + 2) {
+      return { forecast: [], coefficients: [], order, rSquared: 0 };
+    }
     const n = values.length;
     
-    // Build design matrix for AR model
     const X = [];
     const y = [];
     for (let i = order; i < n; i++) {
-      const row = [1]; // intercept
+      const row = [1];
       for (let j = 1; j <= order; j++) {
         row.push(values[i - j]);
       }
@@ -547,47 +723,46 @@ const ForecastingModels = {
       y.push(values[i]);
     }
     
-    // Solve using least squares
     const coefficients = this.leastSquares(X, y);
-    
-    // Generate forecast (starting from 2025 as current year)
-    const lastHistoricalYear = Math.max(...historicalData.map(d => d.year));
-    const currentYear = 2025;
+    const fitted = y.map((_, r) => {
+      let pred = coefficients[0];
+      for (let j = 0; j < order; j++) pred += coefficients[j + 1] * X[r][j + 1];
+      return pred;
+    });
+    const rSquared = this.calculateRSquared(y, fitted);
+
+    const { anchorYear } = this.resolveAnchorYear(sortedAR, anchorYearOverride);
     const forecast = [];
     const recentValues = values.slice(-order);
     
     for (let i = 1; i <= yearsAhead; i++) {
-      const futureYear = currentYear + i;
-      let predicted = coefficients[0]; // intercept
-      
-      // Use recent values for prediction
+      const futureYear = anchorYear + i;
+      let predicted = coefficients[0];
       for (let j = 0; j < order; j++) {
         const valueIndex = order - 1 - j;
         predicted += coefficients[j + 1] * recentValues[valueIndex];
       }
-      
-      // Update recent values for next iteration (shift window)
       recentValues.shift();
       recentValues.push(predicted);
-      
       forecast.push({
         year: futureYear,
         predicted: Math.max(0, Math.min(100, predicted)),
-        confidence: 0.75 // AR models typically have moderate confidence
+        confidence: Math.max(0.5, Math.min(1, rSquared))
       });
     }
     
-    return { forecast, coefficients, order };
+    return { forecast, coefficients, order, rSquared: Math.max(0, Math.min(1, rSquared)) };
   },
 
   // Moving average with trend detection
-  forecastMovingAverage(historicalData, yearsAhead = 5, window = 3) {
+  forecastMovingAverage(historicalData, yearsAhead = 5, window = 3, anchorYearOverride = null) {
     if (historicalData.length < window + 1) {
       return { forecast: [], trend: 0 };
     }
 
-    const values = historicalData.map(d => d.value);
-    const years = historicalData.map(d => d.year);
+    const sortedMA = [...historicalData].sort((a, b) => a.year - b.year);
+    const values = sortedMA.map(d => d.value);
+    const years = sortedMA.map(d => d.year);
     
     // Calculate moving average for last window
     let sum = 0;
@@ -611,13 +786,10 @@ const ForecastingModels = {
       trend = (movingAvgs[movingAvgs.length - 1] - movingAvgs[0]) / (movingAvgs.length - 1);
     }
     
-    // Generate forecast (starting from 2025 as current year)
-    const lastHistoricalYear = Math.max(...years);
-    const currentYear = 2025;
-    const yearsGap = currentYear - lastHistoricalYear;
+    const { anchorYear, yearsGap } = this.resolveAnchorYear(sortedMA, anchorYearOverride);
     const forecast = [];
     for (let i = 1; i <= yearsAhead; i++) {
-      const futureYear = currentYear + i;
+      const futureYear = anchorYear + i;
       const predicted = movingAvg + trend * (yearsGap + i);
       forecast.push({
         year: futureYear,
@@ -629,13 +801,157 @@ const ForecastingModels = {
     return { forecast, trend, movingAvg };
   },
 
+  /** Naive: repeat last observed value */
+  forecastNaive(historicalData, yearsAhead = 5, anchorYearOverride = null) {
+    const sorted = [...historicalData].sort((a, b) => a.year - b.year);
+    const last = sorted[sorted.length - 1];
+    const { anchorYear } = this.resolveAnchorYear(sorted, anchorYearOverride);
+    const forecast = [];
+    for (let i = 1; i <= yearsAhead; i++) {
+      forecast.push({
+        year: anchorYear + i,
+        predicted: Math.max(0, Math.min(100, last.value)),
+        confidence: 0.55,
+        method: 'naive'
+      });
+    }
+    return { forecast, rSquared: 0 };
+  },
+
+  /**
+   * Global pooled gradient-boosted trees (trained offline; see scripts/train-xgboost-model.mjs).
+   * Exposed as ensemble method `xgboostGlobal`. Requires window.XGBGLOBAL_MODEL_JSON, XGBoostFeatures, XGBoostScorer.
+   */
+  forecastXGBoostGlobal(historicalData, yearsAhead = 5, anchorYearOverride = null, fips = '', allData = {}) {
+    const XF = typeof XGBoostFeatures !== 'undefined' ? XGBoostFeatures : (typeof window !== 'undefined' && window.XGBoostFeatures);
+    const XS = typeof XGBoostScorer !== 'undefined' ? XGBoostScorer : (typeof window !== 'undefined' && window.XGBoostScorer);
+    const model = typeof window !== 'undefined' && window.XGBGLOBAL_MODEL_JSON;
+    if (!XF || !XS || !model || !model.trees || !historicalData || historicalData.length < 5) {
+      return { forecast: [], error: 'Global tree model unavailable' };
+    }
+    const sorted = [...historicalData].sort((a, b) => a.year - b.year);
+    const { anchorYear } = this.resolveAnchorYear(sorted, anchorYearOverride);
+    let working = sorted.filter((d) => d.year <= anchorYear);
+    if (working.length < 5) return { forecast: [], error: 'Insufficient data' };
+
+    const forecast = [];
+    for (let h = 1; h <= yearsAhead; h++) {
+      const anchor = working[working.length - 1].year;
+      const feat = XF.buildFeatureVector(working, fips, allData, anchor);
+      if (!feat) break;
+      const pred = XS.predictOne(model, feat);
+      if (pred == null || isNaN(pred)) break;
+      const futureYear = anchorYear + h;
+      forecast.push({
+        year: futureYear,
+        predicted: pred,
+        confidence: 0.65,
+        method: 'xgboost_global'
+      });
+      working = [...working, { year: futureYear, value: pred }].sort((a, b) => a.year - b.year);
+    }
+    if (forecast.length === 0) return { forecast: [], error: 'Global model prediction failed' };
+    return { forecast, rSquared: 0.55 };
+  },
+
+  /** Drift: extend line from first to last observation */
+  forecastDrift(historicalData, yearsAhead = 5, anchorYearOverride = null) {
+    const sorted = [...historicalData].sort((a, b) => a.year - b.year);
+    if (sorted.length < 2) return { forecast: [], rSquared: 0 };
+    const y0 = sorted[0].value;
+    const yT = sorted[sorted.length - 1].value;
+    const t0 = sorted[0].year;
+    const tT = sorted[sorted.length - 1].year;
+    const slope = (yT - y0) / Math.max(1, tT - t0);
+    const { anchorYear, lastHistoricalYear } = this.resolveAnchorYear(sorted, anchorYearOverride);
+    const forecast = [];
+    for (let i = 1; i <= yearsAhead; i++) {
+      const y = anchorYear + i;
+      const h = y - lastHistoricalYear;
+      const predicted = yT + slope * h;
+      forecast.push({
+        year: y,
+        predicted: Math.max(0, Math.min(100, predicted)),
+        confidence: 0.6,
+        method: 'drift'
+      });
+    }
+    return { forecast, slope, rSquared: 0.5 };
+  },
+
+  /** Theta-style: OLS trend + SES on residuals; combine with equal weight to last-value extrapolation */
+  forecastTheta(historicalData, yearsAhead = 5, anchorYearOverride = null) {
+    const sorted = [...historicalData].sort((a, b) => a.year - b.year);
+    if (sorted.length < 4) return { forecast: [], rSquared: 0 };
+    const n = sorted.length;
+    const years = sorted.map(d => d.year);
+    const vals = sorted.map(d => d.value);
+    const meanT = years.reduce((s, y) => s + y, 0) / n;
+    const meanV = vals.reduce((s, v) => s + v, 0) / n;
+    let num = 0, den = 0;
+    for (let i = 0; i < n; i++) {
+      num += (years[i] - meanT) * (vals[i] - meanV);
+      den += (years[i] - meanT) ** 2;
+    }
+    const b = den !== 0 ? num / den : 0;
+    const a = meanV - b * meanT;
+    const trendFit = years.map(t => a + b * t);
+    const resid = vals.map((v, i) => v - trendFit[i]);
+
+    const alphas = [0.2, 0.35, 0.5, 0.65, 0.8];
+    let bestAlpha = 0.35;
+    let bestMse = Infinity;
+    for (const alpha of alphas) {
+      let level = resid[0], mse = 0, cnt = 0;
+      for (let i = 1; i < resid.length; i++) {
+        const pred = level;
+        mse += (pred - resid[i]) ** 2;
+        cnt++;
+        level = alpha * resid[i] + (1 - alpha) * level;
+      }
+      if (cnt > 0 && mse / cnt < bestMse) {
+        bestMse = mse / cnt;
+        bestAlpha = alpha;
+      }
+    }
+    let sesLevel = resid[0];
+    for (let i = 1; i < resid.length; i++) {
+      sesLevel = bestAlpha * resid[i] + (1 - bestAlpha) * sesLevel;
+    }
+
+    let ssRes = 0, ssTot = 0;
+    for (let i = 0; i < n; i++) {
+      ssRes += (vals[i] - trendFit[i]) ** 2;
+      ssTot += (vals[i] - meanV) ** 2;
+    }
+    const rSquared = ssTot > 0 ? Math.max(0, Math.min(1, 1 - ssRes / ssTot)) : 0;
+
+    const lastYear = years[n - 1];
+    const lastVal = vals[n - 1];
+    const { anchorYear, yearsGap } = this.resolveAnchorYear(sorted, anchorYearOverride);
+    const forecast = [];
+    for (let i = 1; i <= yearsAhead; i++) {
+      const y = anchorYear + i;
+      const h = yearsGap + i;
+      const lin = a + b * y;
+      const sescontrib = sesLevel * Math.pow(0.92, h);
+      const naiveLin = lastVal + b * (y - lastYear);
+      const pred = 0.5 * (lin + sescontrib) + 0.5 * naiveLin;
+      forecast.push({
+        year: y,
+        predicted: Math.max(0, Math.min(100, pred)),
+        confidence: Math.max(0.5, rSquared)
+      });
+    }
+    return { forecast, rSquared, thetaAlpha: bestAlpha };
+  },
+
   // Balanced ensemble forecasting with recent trends and historical context
-  forecastEnsemble(historicalData, yearsAhead = 5) {
-    // Sort historical data
+  forecastEnsemble(historicalData, yearsAhead = 5, anchorYearOverride = null) {
     const sorted = [...historicalData].sort((a, b) => a.year - b.year);
     const lastValue = sorted[sorted.length - 1].value;
     const firstValue = sorted[0].value;
-    const currentYear = 2025;
+    const { anchorYear: currentYear, lastHistoricalYear } = this.resolveAnchorYear(sorted, anchorYearOverride);
     
     // Calculate recent trend from last 3-5 years (most relevant)
     const recentYears = sorted.slice(-5); // Last 5 years
@@ -681,24 +997,19 @@ const ForecastingModels = {
       ? avgRecentChange
       : baseTrendRate;
     
-    // Get all forecasting methods (recommended final model)
-    const linear5Year = this.forecast5YearLinear(historicalData, yearsAhead);
-    const holts = this.forecastHoltsLinear(historicalData, yearsAhead);
-    const arima = this.forecastARIMA111(historicalData, yearsAhead);
-    const quadratic = this.forecastPolynomial(historicalData, yearsAhead, 2);
-    const cagr = this.forecastCAGR(historicalData, yearsAhead);
+    const linear5Year = this.forecast5YearLinear(historicalData, yearsAhead, currentYear);
+    const holts = this.forecastHoltsLinear(historicalData, yearsAhead, null, null, currentYear);
+    const arima = this.forecastARIMA111(historicalData, yearsAhead, currentYear);
+    const quadratic = this.forecastPolynomial(historicalData, yearsAhead, 2, currentYear);
+    const cagr = this.forecastCAGR(historicalData, yearsAhead, currentYear);
     
     const methods = {
       linear5Year, holts, arima, quadratic, cagr
     };
     
-    // Generate ensemble forecast with balanced approach
     const forecast = [];
-    const realisticMax = 96.0; // Realistic maximum insurance coverage
-    
-    // Calculate gap years between last historical data and current year
-    const lastHistoricalYear = sorted[sorted.length - 1].year;
-    const gapYears = Math.max(0, currentYear - lastHistoricalYear); // e.g., 2025 - 2022 = 3 years
+    const realisticMax = 96.0;
+    const gapYears = Math.max(0, currentYear - lastHistoricalYear);
     
     // Track the previous forecast value for sequential calculation
     let previousForecastValue = lastValue;
@@ -797,15 +1108,7 @@ const ForecastingModels = {
         methodAverage = predictions.reduce((sum, p) => sum + p.value * p.weight, 0) / totalWeight;
       }
       
-      // Balanced blend: 60% trend projection, 40% method average
       let ensembleValue = trendProjection * 0.6 + methodAverage * 0.4;
-      
-      // Add realistic variability
-      const variabilityFactor = Math.min(1.2, 1.0 + (historicalVolatility / 3));
-      const variationPattern = Math.sin((gap - 1) * 0.7) * historicalVolatility * variabilityFactor * 0.25;
-      ensembleValue += variationPattern;
-      
-      // Apply constraints
       ensembleValue = Math.min(ensembleValue, realisticMax);
       
       const maxYearlyChange = Math.min(4.0, Math.abs(conservativeTrendRate) * 1.8 + historicalVolatility);
@@ -821,9 +1124,8 @@ const ForecastingModels = {
         ensembleValue = Math.min(ensembleValue, baseValue + maxGrowth);
       }
       
-      ensembleValue = Math.max(0, Math.min(realisticMax, ensembleValue));
+      ensembleValue = this.softPct(ensembleValue, 0.1, Math.min(92, Math.max(8, baseValue)));
       
-      // Calculate confidence
       let confidence = 0.7;
       if (recentYearChanges.length > 1) {
         const recentVariance = recentYearChanges.reduce((sum, c) => {
@@ -838,10 +1140,9 @@ const ForecastingModels = {
         confidence = Math.min(0.9, Math.max(0.5, (stabilityScore + trendAlignment) / 2));
       }
       
-      // Calculate confidence intervals
       const stdError = historicalVolatility * Math.sqrt(yearsFromLast);
       const lowerBound = Math.max(0, ensembleValue - 1.5 * stdError);
-      const upperBound = Math.min(realisticMax, ensembleValue + 1.5 * stdError);
+      const upperBound = Math.min(100, ensembleValue + 1.5 * stdError);
       
       forecast.push({
         year: gapYear,
@@ -941,20 +1242,7 @@ const ForecastingModels = {
         methodAverage = predictions.reduce((sum, p) => sum + p.value * p.weight, 0) / totalWeight;
       }
       
-      // Balanced blend: 60% trend projection, 40% method average
-      // This gives more weight to recent trends but allows methods to add nuance
       let ensembleValue = trendProjection * 0.6 + methodAverage * 0.4;
-      
-      // Add realistic variability based on historical volatility
-      // Use a deterministic variation based on year index to add natural variation
-      // This accounts for natural year-to-year variation without randomness
-      const variabilityFactor = Math.min(1.2, 1.0 + (historicalVolatility / 3)); // Scale variability
-      // Use sine wave pattern for deterministic but varied adjustments
-      const variationPattern = Math.sin(i * 0.7) * historicalVolatility * variabilityFactor * 0.25; // 25% of historical volatility
-      ensembleValue += variationPattern;
-      
-      // Apply constraints with some flexibility
-      // 1. Hard cap at realistic maximum
       ensembleValue = Math.min(ensembleValue, realisticMax);
       
       // 2. Limit year-over-year change based on historical patterns
@@ -975,8 +1263,7 @@ const ForecastingModels = {
         ensembleValue = Math.min(ensembleValue, baseValue + maxGrowth);
       }
       
-      // 4. Ensure reasonable bounds
-      ensembleValue = Math.max(0, Math.min(realisticMax, ensembleValue));
+      ensembleValue = this.softPct(ensembleValue, 0.1, Math.min(92, Math.max(8, previousForecastValue)));
       
       // Calculate confidence based on trend stability and data quality
       let confidence = 0.7;
@@ -1002,7 +1289,7 @@ const ForecastingModels = {
       // Calculate confidence intervals based on historical volatility
       const stdError = historicalVolatility * Math.sqrt(yearsFromLast);
       const lowerBound = Math.max(0, ensembleValue - 1.5 * stdError);
-      const upperBound = Math.min(realisticMax, ensembleValue + 1.5 * stdError);
+      const upperBound = Math.min(100, ensembleValue + 1.5 * stdError);
       
       forecast.push({
         year,
@@ -1101,11 +1388,31 @@ const ForecastingModels = {
     const last = sorted[sorted.length - 1].value;
     const change = last - first;
     const percentChange = first !== 0 ? (change / first) * 100 : 0;
-    
-    // Use 5-year linear regression for trend strength
+
     const linear = this.forecast5YearLinear(historicalData, 1);
-    const strength = Math.abs(linear.rSquared || 0);
-    
+    const rSquared = Math.max(0, Math.min(1, linear.rSquared || 0));
+
+    // Year-over-year direction consistency: what fraction of years moved in the overall direction?
+    let sameDirectionCount = 0;
+    for (let i = 1; i < sorted.length; i++) {
+      const yoyChange = sorted[i].value - sorted[i - 1].value;
+      if ((change > 0 && yoyChange > 0) || (change < 0 && yoyChange < 0) || (Math.abs(change) < 0.5)) {
+        sameDirectionCount++;
+      }
+    }
+    const directionConsistency = sorted.length > 1 ? sameDirectionCount / (sorted.length - 1) : 0.5;
+
+    // Magnitude of change relative to volatility (signal-to-noise)
+    const values = sorted.map(d => d.value);
+    const mean = values.reduce((s, v) => s + v, 0) / values.length;
+    const variance = values.reduce((s, v) => s + (v - mean) ** 2, 0) / values.length;
+    const volatility = Math.sqrt(variance) || 1;
+    const signalToNoise = Math.min(2, Math.abs(change) / volatility) / 2;
+
+    // Blend: 40% R², 35% direction consistency, 25% signal-to-noise
+    let strength = rSquared * 0.4 + directionConsistency * 0.35 + signalToNoise * 0.25;
+    strength = Math.max(0.1, Math.min(1, strength));
+
     let direction = 'stable';
     if (Math.abs(percentChange) < 1) {
       direction = 'stable';
@@ -1114,7 +1421,7 @@ const ForecastingModels = {
     } else {
       direction = strength > 0.7 ? 'strong_decreasing' : strength > 0.4 ? 'moderate_decreasing' : 'weak_decreasing';
     }
-    
+
     return {
       direction,
       strength,

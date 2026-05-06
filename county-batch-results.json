@@ -1,0 +1,234 @@
+{
+  "generatedAt": "2026-04-15T17:35:06.067Z",
+  "sampleSize": 55,
+  "seed": 42,
+  "fastBatch": true,
+  "nCandidates": 3142,
+  "nEvaluated": 55,
+  "meanMae": null,
+  "medianMae": 2.521749178536275,
+  "topByLowestMae": [
+    {
+      "rank": 1,
+      "fips": "25011",
+      "name": "Franklin, Massachusetts",
+      "mae": 0.9433,
+      "rmse": 1.3174,
+      "mape": 0.98,
+      "naiveSkill": -0.6326,
+      "nTests": 36
+    },
+    {
+      "rank": 2,
+      "fips": "25013",
+      "name": "Hampden, Massachusetts",
+      "mae": 1.1509,
+      "rmse": 1.6351,
+      "mape": 1.21,
+      "naiveSkill": -0.7192,
+      "nTests": 36
+    },
+    {
+      "rank": 3,
+      "fips": "23023",
+      "name": "Sagadahoc, Maine",
+      "mae": 1.3786,
+      "rmse": 1.6773,
+      "mape": 1.51,
+      "naiveSkill": -0.1873,
+      "nTests": 36
+    },
+    {
+      "rank": 4,
+      "fips": "31083",
+      "name": "Harlan, Nebraska",
+      "mae": 1.4556,
+      "rmse": 1.8781,
+      "mape": 1.64,
+      "naiveSkill": 0.1575,
+      "nTests": 36
+    },
+    {
+      "rank": 5,
+      "fips": "11001",
+      "name": "District of Columbia, District of Columbia",
+      "mae": 1.4658,
+      "rmse": 2.0084,
+      "mape": 1.56,
+      "naiveSkill": -0.104,
+      "nTests": 36
+    },
+    {
+      "rank": 6,
+      "fips": "24013",
+      "name": "Carroll, Maryland",
+      "mae": 1.4664,
+      "rmse": 1.7629,
+      "mape": 1.55,
+      "naiveSkill": -0.0558,
+      "nTests": 36
+    },
+    {
+      "rank": 7,
+      "fips": "31065",
+      "name": "Furnas, Nebraska",
+      "mae": 1.6944,
+      "rmse": 2.0969,
+      "mape": 1.93,
+      "naiveSkill": -0.0572,
+      "nTests": 36
+    },
+    {
+      "rank": 8,
+      "fips": "15007",
+      "name": "Kauai, Hawaii",
+      "mae": 1.7392,
+      "rmse": 2.0777,
+      "mape": 1.85,
+      "naiveSkill": -0.283,
+      "nTests": 36
+    },
+    {
+      "rank": 9,
+      "fips": "15009",
+      "name": "Maui, Hawaii",
+      "mae": 1.7996,
+      "rmse": 2.2049,
+      "mape": 1.92,
+      "naiveSkill": -0.288,
+      "nTests": 36
+    },
+    {
+      "rank": 10,
+      "fips": "10005",
+      "name": "Sussex, Delaware",
+      "mae": 1.8152,
+      "rmse": 2.2819,
+      "mape": 2.02,
+      "naiveSkill": 0.1169,
+      "nTests": 36
+    },
+    {
+      "rank": 11,
+      "fips": "09013",
+      "name": "Tolland, Connecticut",
+      "mae": 1.8686,
+      "rmse": 2.2623,
+      "mape": 1.98,
+      "naiveSkill": -0.5572,
+      "nTests": 33
+    },
+    {
+      "rank": 12,
+      "fips": "13153",
+      "name": "Houston, Georgia",
+      "mae": 1.8926,
+      "rmse": 2.2874,
+      "mape": 2.2,
+      "naiveSkill": -0.1374,
+      "nTests": 36
+    },
+    {
+      "rank": 13,
+      "fips": "09001",
+      "name": "Fairfield, Connecticut",
+      "mae": 1.9648,
+      "rmse": 2.4858,
+      "mape": 2.17,
+      "naiveSkill": -0.1811,
+      "nTests": 33
+    },
+    {
+      "rank": 14,
+      "fips": "29161",
+      "name": "Phelps, Missouri",
+      "mae": 2.0323,
+      "rmse": 2.4578,
+      "mape": 2.39,
+      "naiveSkill": -0.2073,
+      "nTests": 36
+    },
+    {
+      "rank": 15,
+      "fips": "27043",
+      "name": "Faribault, Minnesota",
+      "mae": 2.0764,
+      "rmse": 2.5977,
+      "mape": 2.23,
+      "naiveSkill": -0.2274,
+      "nTests": 36
+    }
+  ],
+  "topByNaiveSkill": [
+    {
+      "rank": 1,
+      "fips": "31083",
+      "name": "Harlan, Nebraska",
+      "naiveSkill": 0.1575,
+      "mae": 1.4556
+    },
+    {
+      "rank": 2,
+      "fips": "24039",
+      "name": "Somerset, Maryland",
+      "naiveSkill": 0.1389,
+      "mae": 2.1816
+    },
+    {
+      "rank": 3,
+      "fips": "10005",
+      "name": "Sussex, Delaware",
+      "naiveSkill": 0.1169,
+      "mae": 1.8152
+    },
+    {
+      "rank": 4,
+      "fips": "22057",
+      "name": "Lafourche, Louisiana",
+      "naiveSkill": 0.0457,
+      "mae": 3.0724
+    },
+    {
+      "rank": 5,
+      "fips": "22031",
+      "name": "De Soto, Louisiana",
+      "naiveSkill": 0.0346,
+      "mae": 2.966
+    },
+    {
+      "rank": 6,
+      "fips": "02170",
+      "name": "Matanuska-Susitna, Alaska",
+      "naiveSkill": 0.0263,
+      "mae": 2.3287
+    },
+    {
+      "rank": 7,
+      "fips": "24013",
+      "name": "Carroll, Maryland",
+      "naiveSkill": -0.0558,
+      "mae": 1.4664
+    },
+    {
+      "rank": 8,
+      "fips": "31065",
+      "name": "Furnas, Nebraska",
+      "naiveSkill": -0.0572,
+      "mae": 1.6944
+    },
+    {
+      "rank": 9,
+      "fips": "12021",
+      "name": "Collier, Florida",
+      "naiveSkill": -0.0572,
+      "mae": 2.9926
+    },
+    {
+      "rank": 10,
+      "fips": "05117",
+      "name": "Prairie, Arkansas",
+      "naiveSkill": -0.1022,
+      "mae": 3.8301
+    }
+  ]
+}

@@ -523,6 +523,33 @@ input, select, button {
     font-size: 12px;
 }
 
+/* Boundary view toggle (Regular vs H3) */
+.boundary-btn {
+    flex: 1;
+    padding: 10px 14px;
+    background: #fff;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 13px;
+    color: #4a5568;
+    transition: all 0.2s ease;
+}
+.boundary-btn:hover {
+    border-color: #cbd5e0;
+}
+.boundary-btn.active {
+    border-color: #3b82f6;
+    background: #3b82f6;
+    color: #fff;
+}
+.boundary-btn-sm {
+    flex: none;
+    padding: 6px 10px;
+    font-size: 11px;
+}
+
 /* Enhanced scatterplot styling */
 #scatterContainer {
     background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
@@ -1127,7 +1154,7 @@ input, select, button {
   white-space: nowrap; border: 0;
 }
 
-/* Top search bar container */
+/* Top search bar container - pointer-events: none so clicks pass through to content below when sticky overlay */
 .searchbar-container {
   position: sticky;
   top: 0;
@@ -1136,6 +1163,15 @@ input, select, button {
   padding-bottom: 12px;
   margin-bottom: 16px;
   border-bottom: 1px solid rgba(0,0,0,0.06);
+  pointer-events: none;
+}
+
+.searchbar-container .searchbar,
+.searchbar-container #searchResults,
+.searchbar-container .search-clear,
+.searchbar-container #searchInput,
+.searchbar-container label {
+  pointer-events: auto;
 }
 
 /* Search input shell */
@@ -2070,6 +2106,240 @@ input, select, button {
   padding: 8px;
   background: rgba(139, 92, 246, 0.05);
   border-radius: 6px;
+}
+
+/* Backtest Validation Section */
+.pp-backtest-container {
+  display: none;
+  margin-top: 16px;
+}
+
+.pp-backtest-container.show {
+  display: block;
+  animation: fadeInUp 0.3s ease-out;
+}
+
+.pp-backtest-box {
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.pp-backtest-title {
+  margin: 0 0 6px 0;
+  font-size: 14px;
+  color: #065f46;
+  font-weight: 600;
+}
+
+.pp-backtest-desc {
+  margin: 0 0 10px 0;
+  color: #047857;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.pp-backtest-plain-summary {
+  margin: 0 0 14px 0;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 8px;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  color: #064e3b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.pp-backtest-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+}
+
+.pp-backtest-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px 16px;
+}
+
+.pp-backtest-metric-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 8px;
+  border: 1px solid rgba(16, 185, 129, 0.15);
+}
+
+.pp-backtest-plainlabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: #065f46;
+  line-height: 1.25;
+}
+
+.pp-backtest-hint {
+  font-size: 11px;
+  color: #6b7280;
+  line-height: 1.4;
+}
+
+.pp-backtest-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pp-backtest-label {
+  font-size: 10px;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.pp-backtest-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: #059669;
+}
+
+.pp-backtest-technical {
+  margin-top: 12px;
+  font-size: 11px;
+  color: #047857;
+}
+
+.pp-backtest-technical summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #065f46;
+}
+
+.pp-backtest-technical-list {
+  margin: 8px 0 0 0;
+  padding-left: 18px;
+  line-height: 1.45;
+}
+
+.pp-backtest-horizon-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0 8px 0;
+  font-size: 11px;
+}
+
+.pp-backtest-horizon-table caption {
+  text-align: left;
+  font-weight: 600;
+  color: #065f46;
+  margin-bottom: 6px;
+}
+
+.pp-backtest-horizon-table th,
+.pp-backtest-horizon-table td {
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.pp-backtest-horizon-table th {
+  background: rgba(16, 185, 129, 0.12);
+  color: #047857;
+}
+
+.pp-backtest-chart-wrap {
+  margin-top: 10px;
+}
+
+.pp-backtest-chart-label {
+  font-size: 11px;
+  color: #047857;
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+
+.pp-backtest-scatter-svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* Backtest: ensemble vs MCMC comparison */
+.pp-backtest-compare .pp-backtest-compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 12px;
+}
+
+.pp-backtest-compare-table th,
+.pp-backtest-compare-table td {
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.pp-backtest-compare-table thead th {
+  background: rgba(16, 185, 129, 0.12);
+  color: #047857;
+  font-weight: 600;
+}
+
+.pp-backtest-compare-metric-col {
+  width: 34%;
+}
+
+.pp-backtest-compare-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pp-backtest-hint-row {
+  display: block;
+  font-size: 10px;
+  font-weight: 400;
+  color: #6b7280;
+  line-height: 1.35;
+}
+
+.pp-backtest-compare-val {
+  font-variant-numeric: tabular-nums;
+}
+
+.pp-backtest-winner {
+  font-weight: 700;
+  background: rgba(16, 185, 129, 0.15);
+  color: #065f46;
+}
+
+.pp-backtest-horizon-compare {
+  margin-top: 10px;
+}
+
+.pp-backtest-horizon-compare caption {
+  caption-side: top;
+  text-align: left;
+  font-size: 11px;
+  color: #047857;
+  padding-bottom: 6px;
+}
+
+.pp-backtest-scatter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+@media (max-width: 520px) {
+  .pp-backtest-scatter-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Detailed Explanation Section */

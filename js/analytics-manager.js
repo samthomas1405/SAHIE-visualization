@@ -31,6 +31,7 @@ function initializeAnalyticsPanel() {
   
   // Overlay click handler
   document.addEventListener('click', (e) => {
+    if (!e.target || !e.target.classList) return;
     if (e.target.classList.contains('analytics-overlay')) {
       closeAnalyticsPanel();
     }

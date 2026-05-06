@@ -55,6 +55,7 @@ function buildScatterData() {
 // Enhanced scatterplot with interactive features
 function renderScatterplot() {
   if (!DOMRefs.scatterContainer) return;
+  _lastHighlightedDot = null; // Clear stale reference when re-rendering
 
   const W = DOMRefs.scatterContainer.clientWidth || 900;
   const H = DOMRefs.scatterContainer.clientHeight || 520;
@@ -513,22 +514,27 @@ function renderScatterplot() {
   g.appendChild(interpretationText);
 }
 
+// Track last highlighted dot to avoid iterating all dots on each click
+let _lastHighlightedDot = null;
+
 // Function to highlight scatterplot point when map area is clicked
 function highlightScatterPoint(fips) {
   if (!window.scatterData || AppConfig.viewMode !== 'scatter') return;
-  
-  // Remove previous highlights
-  document.querySelectorAll('.scatter-dot').forEach(dot => {
-    dot.setAttribute('stroke', 'white');
-    dot.setAttribute('stroke-opacity', '1');
-    dot.style.filter = 'drop-shadow(0 1px 2px rgba(0,0,0,0.1))';
-    // Remove highlight class
-    dot.classList.remove('highlighted');
-  });
-  
+  if (!DOMRefs.scatterContainer) return;
+
+  // Reset only the previously highlighted dot (avoids O(n) iteration on 3000+ dots)
+  if (_lastHighlightedDot && _lastHighlightedDot.isConnected) {
+    _lastHighlightedDot.setAttribute('stroke', 'white');
+    _lastHighlightedDot.setAttribute('stroke-opacity', '1');
+    _lastHighlightedDot.style.filter = 'drop-shadow(0 1px 2px rgba(0,0,0,0.1))';
+    _lastHighlightedDot.classList.remove('highlighted');
+  }
+  _lastHighlightedDot = null;
+
   // Highlight the corresponding scatter point
   const targetDot = document.querySelector(`.scatter-dot[data-fips="${fips}"]`);
   if (targetDot) {
+    _lastHighlightedDot = targetDot;
     // Use visual effects that don't change size
     targetDot.setAttribute('stroke', '#ffd700');
     targetDot.setAttribute('stroke-opacity', '1');
@@ -550,12 +556,13 @@ function highlightScatterPoint(fips) {
 
 // Function to reset scatterplot highlighting
 function resetScatterHighlight() {
-  document.querySelectorAll('.scatter-dot').forEach(dot => {
-    dot.setAttribute('stroke', 'white');
-    dot.setAttribute('stroke-opacity', '1');
-    dot.style.filter = 'drop-shadow(0 1px 2px rgba(0,0,0,0.1))';
-    dot.classList.remove('highlighted');
-  });
+  if (_lastHighlightedDot && _lastHighlightedDot.isConnected) {
+    _lastHighlightedDot.setAttribute('stroke', 'white');
+    _lastHighlightedDot.setAttribute('stroke-opacity', '1');
+    _lastHighlightedDot.style.filter = 'drop-shadow(0 1px 2px rgba(0,0,0,0.1))';
+    _lastHighlightedDot.classList.remove('highlighted');
+  }
+  _lastHighlightedDot = null;
 }
 
 // Function to reset scatterplot zoom

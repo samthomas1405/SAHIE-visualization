@@ -403,6 +403,21 @@ async function loadGeoJSON() {
   return await response.json();
 }
 
+/** Load state boundaries GeoJSON for overlay (always returns state-level shapes) */
+async function loadStateBoundariesGeoJSON() {
+  const response = await fetch('https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json');
+  return await response.json();
+}
+
+/** Load GeoJSON for a specific geography level (state or county) */
+async function loadGeoJSONForLevel(level) {
+  const url = level === 'state'
+    ? 'https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json'
+    : 'https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json';
+  const response = await fetch(url);
+  return await response.json();
+}
+
 async function fetchData() {
   try {
     const isState = AppConfig.mapLevel === 'state';
@@ -483,12 +498,95 @@ function nameForFIPS(fips) {
   return AppConfig.getFipsNameCache()[fips] || AppConfig.getPlacesDataStore()[fips]?.locationName || fips;
 }
 
+/**
+ * Counties with SAHIE history long enough for backtesting / forecasting.
+ * @param {Object} allData - from ForecastingModels.fetchAllHistoricalData(..., 'county')
+ * @param {Object} geojson - county GeoJSON (plotly counties)
+ * @param {number} minPoints - minimum yearly observations (default 5)
+ * @returns {Array<{ fips: string, stateFips: string, name: string }>}
+ */
+function enumerateValidCountiesFromAllData(allData, geojson, minPoints = 5) {
+  if (!allData || !geojson?.features) return [];
+  const byGeo = new Map();
+  for (const f of geojson.features) {
+    const fips = (f.properties?.GEO_ID || '').replace('0500000US', '') || (f.id && String(f.id).length === 5 ? String(f.id) : '');
+    if (!fips || fips.length !== 5) continue;
+    const stateFips = fips.slice(0, 2);
+    const stateName = AppConfig.stateFIPSMapping[f.properties?.STATE] || '';
+    const name = `${f.properties?.NAME || ''}, ${stateName}`.trim() || fips;
+    byGeo.set(fips, { fips, stateFips, name });
+  }
+  const out = [];
+  for (const [fips, row] of byGeo) {
+    const series = allData[fips];
+    if (!Array.isArray(series) || series.length < minPoints) continue;
+    out.push(row);
+  }
+  return out;
+}
+
+/**
+ * Stratified sample: spread across states then fill to targetN.
+ * @param {Array<{fips:string,stateFips:string,name:string}>} candidates
+ * @param {number} targetN - e.g. 50
+ * @param {number} [seed] - optional deterministic PRNG seed
+ */
+function stratifiedSampleCountiesByState(candidates, targetN = 50, seed = null) {
+  if (!candidates.length || targetN <= 0) return [];
+  let rnd = () => Math.random();
+  if (seed != null) {
+    let s = Math.floor(seed) % 2147483647;
+    if (s <= 0) s += 2147483646;
+    rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  }
+  const byState = new Map();
+  for (const c of candidates) {
+    if (!byState.has(c.stateFips)) byState.set(c.stateFips, []);
+    byState.get(c.stateFips).push(c);
+  }
+  for (const arr of byState.values()) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(rnd() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+  }
+  const states = [...byState.keys()].sort();
+  const perState = Math.max(1, Math.ceil(targetN / states.length));
+  const picked = [];
+  const used = new Set();
+  for (const st of states) {
+    const pool = byState.get(st) || [];
+    for (let k = 0; k < perState && picked.length < targetN && k < pool.length; k++) {
+      const c = pool[k];
+      if (used.has(c.fips)) continue;
+      used.add(c.fips);
+      picked.push(c);
+    }
+  }
+  if (picked.length < targetN) {
+    const flat = candidates.filter(c => !used.has(c.fips));
+    for (let i = flat.length - 1; i > 0; i--) {
+      const j = Math.floor(rnd() * (i + 1));
+      [flat[i], flat[j]] = [flat[j], flat[i]];
+    }
+    for (const c of flat) {
+      if (picked.length >= targetN) break;
+      picked.push(c);
+    }
+  }
+  return picked.slice(0, targetN);
+}
+
 // Export for use in other modules
 window.DataManager = {
   CDCPlaces,
   loadGeoJSON,
+  loadGeoJSONForLevel,
+  loadStateBoundariesGeoJSON,
   fetchData,
   fetchPlacesData,
   buildFipsNameCache,
-  nameForFIPS
+  nameForFIPS,
+  enumerateValidCountiesFromAllData,
+  stratifiedSampleCountiesByState
 };

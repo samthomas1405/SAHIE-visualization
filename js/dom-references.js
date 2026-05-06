@@ -68,6 +68,16 @@ const forecastYearsValue = document.getElementById('forecastYearsValue');
 const forecastTrendBtn = document.getElementById('forecastTrendBtn');
 const trendForecastResult = document.getElementById('trendForecastResult');
 const trendForecastChart = document.getElementById('trendForecastChart');
+const trendForecastBacktest = document.getElementById('trendForecastBacktest');
+
+// Spatial view (Regular vs H3 hexagons)
+const regularBoundariesBtn = document.getElementById('regularBoundariesBtn');
+const h3HexagonsBtn = document.getElementById('h3HexagonsBtn');
+const h3SizeWrapper = document.getElementById('h3SizeWrapper');
+const h3SizeSlider = document.getElementById('h3SizeSlider');
+const h3SizeValue = document.getElementById('h3SizeValue');
+const h3CentroidBtn = document.getElementById('h3CentroidBtn');
+const h3GridBtn = document.getElementById('h3GridBtn');
 
 // Export for use in other modules
 window.DOMRefs = {
@@ -122,5 +132,13 @@ window.DOMRefs = {
   forecastYearsValue,
   forecastTrendBtn,
   trendForecastResult,
-  trendForecastChart
+  trendForecastChart,
+  trendForecastBacktest,
+  regularBoundariesBtn,
+  h3HexagonsBtn,
+  h3SizeWrapper,
+  h3SizeSlider,
+  h3SizeValue,
+  h3CentroidBtn,
+  h3GridBtn
 };

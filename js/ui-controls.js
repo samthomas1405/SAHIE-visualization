@@ -41,6 +41,7 @@ function initializeSearch() {
   });
 
   document.addEventListener('click', (e) => {
+    if (!DOMRefs.searchResults || !DOMRefs.searchInput) return;
     if (!DOMRefs.searchResults.contains(e.target) && e.target !== DOMRefs.searchInput) {
       DOMRefs.searchResults.style.display = 'none';
     }
@@ -248,6 +249,83 @@ function initializeEventHandlers() {
     await afterDataChangeRerender();
   });
 
+  // Boundary view toggle (Regular vs H3 hexagons)
+  if (DOMRefs.regularBoundariesBtn && DOMRefs.h3HexagonsBtn) {
+    DOMRefs.regularBoundariesBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      DOMRefs.regularBoundariesBtn.classList.add('active');
+      DOMRefs.h3HexagonsBtn.classList.remove('active');
+      if (DOMRefs.h3SizeWrapper) DOMRefs.h3SizeWrapper.style.display = 'none';
+      if (MapManager?.toggleH3View) await MapManager.toggleH3View(false);
+    });
+    DOMRefs.h3HexagonsBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      DOMRefs.h3HexagonsBtn.classList.add('active');
+      DOMRefs.regularBoundariesBtn.classList.remove('active');
+      if (DOMRefs.h3SizeWrapper) DOMRefs.h3SizeWrapper.style.display = 'block';
+      // Switch to map view so user sees the hexagons (map is hidden in scatter view)
+      if (AppConfig.viewMode === 'scatter') {
+        AppConfig.setViewMode('map');
+        updateViewVisibility();
+        document.querySelectorAll('.view-btn').forEach(b => {
+          b.classList.toggle('active', b.dataset.view === 'map');
+        });
+        // Defer until map container has layout (was display:none)
+        await new Promise(r => requestAnimationFrame(r));
+        if (MapManager?.map) MapManager.map.invalidateSize();
+      }
+      if (MapManager?.toggleH3View) await MapManager.toggleH3View(true);
+      return false;
+    });
+  }
+
+  // H3 mode toggle (Centroid vs Full grid)
+  if (DOMRefs.h3CentroidBtn && DOMRefs.h3GridBtn) {
+    DOMRefs.h3CentroidBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      DOMRefs.h3CentroidBtn.classList.add('active');
+      DOMRefs.h3GridBtn.classList.remove('active');
+      if (MapManager?.setH3GridMode) MapManager.setH3GridMode(false);
+    });
+    DOMRefs.h3GridBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      DOMRefs.h3GridBtn.classList.add('active');
+      DOMRefs.h3CentroidBtn.classList.remove('active');
+      if (MapManager?.setH3GridMode) MapManager.setH3GridMode(true);
+    });
+  }
+
+  // H3 size slider (resolution 2-6 county, 3-5 state)
+  if (DOMRefs.h3SizeSlider) {
+    let h3SliderDebounce = null;
+    const sliderToResolution = (val) => {
+      const maxRes = AppConfig?.mapLevel === 'state' ? 5 : 6;
+      const minRes = AppConfig?.mapLevel === 'state' ? 3 : 2;
+      return Math.max(minRes, Math.min(maxRes, Math.round(maxRes - (val / 100) * (maxRes - minRes))));
+    };
+    const updateH3SizeLabel = (val) => {
+      if (DOMRefs.h3SizeValue) DOMRefs.h3SizeValue.textContent = 'Res ' + sliderToResolution(parseInt(val, 10));
+    };
+    DOMRefs.h3SizeSlider.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value, 10);
+      updateH3SizeLabel(val);
+      clearTimeout(h3SliderDebounce);
+      h3SliderDebounce = setTimeout(() => {
+        if (MapManager?.setH3Size) MapManager.setH3Size(val);
+      }, 150);
+    });
+    DOMRefs.h3SizeSlider.addEventListener('change', (e) => {
+      clearTimeout(h3SliderDebounce);
+      const val = parseInt(e.target.value, 10);
+      if (MapManager?.setH3Size) MapManager.setH3Size(val);
+      updateH3SizeLabel(val);
+    });
+  }
+
   // Geography level change (single consolidated handler)
   DOMRefs.levelSelect.addEventListener('change', async () => {
     const selectedLevel = DOMRefs.levelSelect.value;
@@ -265,6 +343,22 @@ function initializeEventHandlers() {
     DOMRefs.selectPrompt.style.display = 'none';
     DOMRefs.layerSelection.style.display = 'block';
     DOMRefs.filterOptions.style.display = 'block';
+    if (DOMRefs.h3SizeWrapper) {
+      DOMRefs.h3SizeWrapper.style.display = MapManager?.useH3View ? 'block' : 'none';
+    }
+    if (DOMRefs.h3SizeSlider && MapManager?.h3SizeValue !== undefined) {
+      DOMRefs.h3SizeSlider.value = MapManager.h3SizeValue;
+      if (DOMRefs.h3SizeValue) {
+        const maxRes = selectedLevel === 'state' ? 5 : 6;
+        const minRes = selectedLevel === 'state' ? 3 : 2;
+        const res = Math.max(minRes, Math.min(maxRes, Math.round(maxRes - (MapManager.h3SizeValue / 100) * (maxRes - minRes))));
+        DOMRefs.h3SizeValue.textContent = 'Res ' + res;
+      }
+    }
+    if (DOMRefs.h3CentroidBtn && DOMRefs.h3GridBtn && MapManager?.h3GridMode !== undefined) {
+      DOMRefs.h3CentroidBtn.classList.toggle('active', !MapManager.h3GridMode);
+      DOMRefs.h3GridBtn.classList.toggle('active', MapManager.h3GridMode);
+    }
 
     if (selectedLevel === 'state') {
       DOMRefs.raceWrapper.style.display = 'block';
